@@ -1335,7 +1335,14 @@ function dismissInstall(){
 function init(){
   const h=store.get("ft_history"),ns=store.get("ft_northstars"),wk=store.get("ft_week");
   if(h) history=h;
-  if(ns) northStars=ns;
+  // Guard: only use stored northStars if it's a non-empty array
+  if(Array.isArray(ns) && ns.length>0){
+    northStars=ns;
+  } else {
+    // Seed from NS_INIT and persist so future loads find it
+    northStars=JSON.parse(JSON.stringify(NS_INIT));
+    store.set("ft_northstars",northStars);
+  }
   if(wk) curWeek=wk;
   blockSel=curWeek;
   updateCrumb(); prefill(); renderLog(); renderBlock(); renderStars(); renderHist();
@@ -2068,7 +2075,7 @@ function renderStars(){
     const isEditing=editingNS===ns.id;
     let linkedEx=null;
     for(const[day,dayData]of Object.entries(WK)){
-      const ex=dayData.exercises.find(e=>e.id===ns.id);
+      const ex=(dayData.exercises||[]).find(e=>e.id===ns.id);
       if(ex){linkedEx=`${DAY_META[day].short} · ${ex.name}`;break;}
     }
     const multiRep=targetReps>1;
@@ -2314,6 +2321,7 @@ function clearData(){
   if(!confirm("Clear ALL training data? Export first."))return;
   localStorage.removeItem("ft_history");localStorage.removeItem("ft_northstars");localStorage.removeItem("ft_week");
   history=[];northStars=JSON.parse(JSON.stringify(NS_INIT));curWeek=1;
+  store.set("ft_northstars",northStars);
   updateCrumb();prefill();renderLog();renderBlock();renderStars();renderHist();refreshDayPills();toast("Data cleared");
 }
 

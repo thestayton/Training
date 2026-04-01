@@ -2297,23 +2297,58 @@ function handleImportFile(e){
   if(!file) return;
   const reader = new FileReader();
   reader.onload = (ev) => {
+    let data;
     try {
-      const data = JSON.parse(ev.target.result);
-      if(!confirm(`Import backup from ${data.exported ? new Date(data.exported).toLocaleString() : 'unknown date'}?\n\nThis will REPLACE your current local data.`)) return;
-      applyImportedData(data);
-      toast('Import successful ✓');
+      data = JSON.parse(ev.target.result);
     } catch(err) {
-      alert('Could not parse file — make sure it is a valid TrainLog JSON backup.');
+      alert('Could not parse file — make sure you are selecting the JSON backup file (training_log_backup.json), not the HTML app file.');
+      e.target.value = '';
+      return;
     }
+    // Validate it looks like a TrainLog backup
+    if(!data || (!data.history && !data.northStars && !data.currentWeek)){
+      alert('This doesn\'t look like a TrainLog backup. Expected a JSON file with history, northStars, or currentWeek fields.');
+      e.target.value = '';
+      return;
+    }
+    const dateStr = data.exported ? new Date(data.exported).toLocaleString() : 'unknown date';
+    const histCount = data.history?.length || 0;
+    if(!confirm(`Import backup from ${dateStr}?\n${histCount} session${histCount!==1?'s':''} found.\n\nThis will REPLACE your current local data.`)) {
+      e.target.value = '';
+      return;
+    }
+    applyImportedData(data);
+    toast('Import successful ✓');
+    e.target.value = '';
+  };
+  reader.onerror = () => {
+    alert('Could not read the file. Please try again.');
+    e.target.value = '';
   };
   reader.readAsText(file);
-  e.target.value = '';
 }
 
 function applyImportedData(data){
-  if(data.history)   { history    = data.history;    store.set("ft_history",    history); }
-  if(data.northStars){ northStars = data.northStars;  store.set("ft_northstars", northStars); }
-  if(data.currentWeek){ curWeek   = data.currentWeek; store.set("ft_week",       curWeek); blockSel = curWeek; }
+  if(data.history){
+    // Migrate v1 day IDs: v1 had D1=Lower, D2=Pull, D3=Volume (3 days)
+    // v2 has D1=Lower, D2=Cond, D3=Pull, D4=Mob, D5=Volume (5 days)
+    const migratedHistory = data.history.map(s => {
+      if(!s.type && s.day === 'D2' && s.log && (s.log.pullup || s.log.row || s.log.rear_delt || s.log.bicep_curl)){
+        return {...s, day:'D3', dayName: DAY_META['D3'].name};
+      }
+      if(!s.type && s.day === 'D3' && s.log && (s.log.squat_vol || s.log.rdl || s.log.incline_db || s.log.farmer_carry)){
+        return {...s, day:'D5', dayName: DAY_META['D5'].name};
+      }
+      return s;
+    });
+    history = migratedHistory;
+    store.set("ft_history", history);
+  }
+  if(data.northStars && Array.isArray(data.northStars) && data.northStars.length > 0){
+    northStars = data.northStars;
+    store.set("ft_northstars", northStars);
+  }
+  if(data.currentWeek){ curWeek = data.currentWeek; store.set("ft_week", curWeek); blockSel = curWeek; }
   updateCrumb(); prefill(); renderLog(); renderBlock(); renderStars(); renderHist(); refreshDayPills();
 }
 
